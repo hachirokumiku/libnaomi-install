@@ -1,133 +1,119 @@
 #!/bin/bash
 
-# Ensure the script is run with superuser privileges
-if [ "$(id -u)" -ne 0 ]; then
-    echo "Please run this script as root or with sudo."
-    exit 1
-fi
+# Function to check if the script is run with superuser privileges
+check_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "This script must be run as root (or with sudo)."
+        exit 1
+    fi
+}
 
-# Update package list
-echo "Updating package list..."
-sudo apt-get update
+# Function to uninstall Libnaomi and toolchain
+uninstall_libnaomi() {
+    echo "Uninstalling Libnaomi and associated toolchain..."
 
-# Install necessary dependencies
-echo "Installing dependencies..."
-sudo apt-get install -y \
-  build-essential \
-  git \
-  cmake \
-  libcurl4-openssl-dev \
-  libssl-dev \
-  zlib1g-dev \
-  binutils-sh4-linux-gnu \
-  gcc-sh4-linux-gnu \
-  g++-sh4-linux-gnu \
-  make \
-  curl \
-  wget \
-  python3-tk \
-  python3-pip
+    # Remove toolchain binaries
+    rm -rf /usr/local/bin/sh4-linux-gnu-*
+    
+    # Remove any installed libraries
+    rm -rf /usr/local/lib/libnaomi*
 
-# Install additional Python packages (for Tkinter)
-pip3 install tk
+    # Remove the source code directory if exists
+    rm -rf /opt/libnaomi
+    
+    # Optionally remove dependency packages installed
+    apt-get purge -y build-essential binutils gcc g++ cmake
 
-# Clone the libnaomi repository
-echo "Cloning libnaomi repository..."
-cd /opt
-sudo git clone https://github.com/hachirokumiku/libnaomi.git
+    # Clean up residuals
+    apt-get autoremove -y
+    apt-get clean
+    echo "Libnaomi and toolchain uninstalled successfully."
+}
 
-# Set up environment variables (if applicable)
-echo "Setting up environment variables..."
-echo 'export PATH=$PATH:/opt/libnaomi/bin' >> ~/.bashrc
-echo 'export LIBNAOMI_DIR=/opt/libnaomi' >> ~/.bashrc
-source ~/.bashrc
+# Function to install dependencies
+install_dependencies() {
+    echo "Installing dependencies..."
+    apt-get update
+    apt-get install -y \
+        build-essential \
+        binutils \
+        gcc \
+        g++ \
+        cmake \
+        git \
+        wget \
+        unzip \
+        python3 \
+        python3-pip
+    echo "Dependencies installed successfully."
+}
 
-# Build libnaomi (if required)
-echo "Building libnaomi..."
-cd /opt/libnaomi
-sudo make
+# Function to install the Libnaomi and toolchain
+install_libnaomi() {
+    echo "Installing Libnaomi and toolchain..."
 
-# Completion message
-echo "libnaomi and toolchain installation complete!"
-echo "You may need to log out and back in or restart your terminal for changes to take effect."
+    # Clone the Libnaomi repository
+    git clone https://github.com/hachirokumiku/libnaomi.git /opt/libnaomi
+    cd /opt/libnaomi
 
-# Start GUI-based ROM loader
-python3 << 'EOF'
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import subprocess
-import os
+    # Compile Libnaomi
+    mkdir -p build
+    cd build
+    cmake ..
+    make
 
-class LibNaomiGUI(tk.Tk):
-    def __init__(self):
-        super().__init__()
+    # Install the toolchain
+    wget https://github.com/yanagilab/sh4-linux-toolchain/releases/download/v1.0.0/sh4-linux-gnu.tar.gz
+    tar -xzvf sh4-linux-gnu.tar.gz -C /usr/local/
 
-        self.title("LibNaomi ROM Loader")
-        self.geometry("500x300")
+    # Verify installation
+    if [ -f "/usr/local/bin/sh4-linux-gnu-gcc" ]; then
+        echo "Libnaomi and toolchain installed successfully."
+    else
+        echo "Error installing Libnaomi or toolchain."
+        exit 1
+    fi
+}
 
-        self.label = tk.Label(self, text="Select a ROM file to load", font=("Helvetica", 14))
-        self.label.pack(pady=20)
+# Function to reinstall Libnaomi and dependencies
+reinstall_libnaomi_and_dependencies() {
+    echo "Reinstalling Libnaomi and dependencies..."
 
-        # Precompiled examples
-        self.example_button = tk.Button(self, text="Select Precompiled Example", command=self.select_example)
-        self.example_button.pack(pady=10)
+    # Uninstall the current version if any
+    uninstall_libnaomi
 
-        # File selection for custom ROMs
-        self.file_button = tk.Button(self, text="Select Custom ROM", command=self.select_custom_rom)
-        self.file_button.pack(pady=10)
+    # Install dependencies
+    install_dependencies
 
-        # Quit button
-        self.quit_button = tk.Button(self, text="Quit", command=self.quit)
-        self.quit_button.pack(pady=20)
+    # Install Libnaomi and toolchain
+    install_libnaomi
+}
 
-    def select_example(self):
-        # Load a list of precompiled example ROMs
-        examples_path = "/opt/libnaomi/examples"
-        if not os.path.exists(examples_path):
-            messagebox.showerror("Error", "Example ROMs not found.")
-            return
-        
-        examples = [f for f in os.listdir(examples_path) if f.endswith('.rom')]
-        if not examples:
-            messagebox.showerror("Error", "No precompiled example ROMs found.")
-            return
+# Main function to handle options
+main() {
+    check_root
 
-        example = filedialog.askopenfilename(
-            initialdir=examples_path,
-            title="Select Example ROM",
-            filetypes=[("ROM files", "*.rom")]
-        )
+    PS3="Choose an option: "
+    select option in "Uninstall Libnaomi and Toolchain" "Reinstall Libnaomi and Toolchain" "Reinstall Dependencies" "Exit"; do
+        case $option in
+            "Uninstall Libnaomi and Toolchain")
+                uninstall_libnaomi
+                ;;
+            "Reinstall Libnaomi and Toolchain")
+                reinstall_libnaomi_and_dependencies
+                ;;
+            "Reinstall Dependencies")
+                install_dependencies
+                ;;
+            "Exit")
+                break
+                ;;
+            *)
+                echo "Invalid option. Please try again."
+                ;;
+        esac
+    done
+}
 
-        if example:
-            self.load_rom(example)
-
-    def select_custom_rom(self):
-        # Let the user choose a custom ROM
-        file_path = filedialog.askopenfilename(
-            title="Select a ROM file",
-            filetypes=[("ROM files", "*.rom")]
-        )
-
-        if file_path:
-            self.load_rom(file_path)
-
-    def load_rom(self, rom_path):
-        # Simulate the ROM loading process
-        messagebox.showinfo("Loading ROM", f"Loading ROM: {rom_path}")
-        # Here you would add the logic for processing the ROM
-        # For example, calling a script or command to load and run the ROM
-        try:
-            subprocess.run(["/opt/libnaomi/load_rom.sh", rom_path], check=True)
-            messagebox.showinfo("Success", "ROM loaded successfully!")
-        except subprocess.CalledProcessError as e:
-            messagebox.showerror("Error", f"Error loading ROM: {str(e)}")
-
-
-# Run the GUI application
-if __name__ == "__main__":
-    app = LibNaomiGUI()
-    app.mainloop()
-
-EOF
-
-echo "GUI-based ROM loader started!"
+# Run the main function
+main
