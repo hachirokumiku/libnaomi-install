@@ -1,52 +1,58 @@
 #!/bin/bash
 
-# Set variables
-NAOMI_TOOLCHAIN_DIR="/opt/toolchains"
-LIBNAOMI_DIR="$NAOMI_TOOLCHAIN_DIR/libnaomi"
-GITHUB_REPO="https://github.com/DragonMinded/libnaomi.git"
-DEPENDENCIES=("build-essential" "git" "gcc" "g++" "make" "clang" "python3" "python3-pip" "libncurses-dev" "gawk" "libc6-dev" "bison" "flex" "libssl-dev" "libelf-dev" "libfl-dev" "libcurl4-openssl-dev")
+# Check for SH4 toolchain installation
+if ! command -v sh4-linux-gnu-gcc &>/dev/null; then
+  echo "SH4 toolchain not found. Please install it before proceeding."
+  exit 1
+fi
 
-# Step 1: Update and install system dependencies
-echo "Updating package list and installing dependencies..."
-sudo apt-get update -y
-for dep in "${DEPENDENCIES[@]}"; do
-    sudo apt-get install -y "$dep"
-done
+# Check for missing tools (ml and mshlelf)
+if ! command -v ml &>/dev/null; then
+  echo "'ml' tool not found. Attempting to install..."
+  sudo apt-get install sh4-linux-gnu-binutils || {
+    echo "Failed to install sh4-linux-gnu-binutils. Please install manually.";
+    exit 1;
+  }
+fi
 
-# Step 2: Install required tools for building the toolchain
-echo "Installing required build tools..."
-sudo apt-get install -y gcc g++ clang make git
+if ! command -v mshlelf &>/dev/null; then
+  echo "'mshlelf' tool not found. Please ensure that the SH4 toolchain is set up correctly."
+  exit 1
+fi
 
-# Step 3: Create the toolchains directory if it doesn't exist
-echo "Creating toolchain directory at $NAOMI_TOOLCHAIN_DIR..."
-sudo mkdir -p "$NAOMI_TOOLCHAIN_DIR"
+# Ensure build directory exists
+if [ ! -d "build" ]; then
+  mkdir build
+fi
 
-# Step 4: Clone the libnaomi repository
-echo "Cloning libnaomi repository from GitHub..."
-cd "$NAOMI_TOOLCHAIN_DIR"
-git clone "$GITHUB_REPO"
+# Clone libnaomi repository
+echo "Cloning libnaomi repository..."
+git clone https://github.com/DragonMinded/libnaomi.git || {
+  echo "Failed to clone libnaomi repository.";
+  exit 1;
+}
 
-# Step 5: Build the toolchain and setup libnaomi
-echo "Running setup script for libnaomi..."
-cd "$LIBNAOMI_DIR/setup"
-./setup.sh
+# Move to libnaomi directory
+cd libnaomi || {
+  echo "Failed to enter libnaomi directory.";
+  exit 1;
+}
 
-# Step 6: Build the toolchain and related libraries
-echo "Building libnaomi toolchain..."
-cd "$LIBNAOMI_DIR"
-make toolchain
+# Build the advancedpvrtest example
+echo "Building advancedpvrtest..."
+make || {
+  echo "Build failed. Exiting.";
+  exit 1;
+}
 
-# Step 7: Clean up and finish
-echo "Cleaning up..."
-cd "$NAOMI_TOOLCHAIN_DIR"
-rm -rf "$LIBNAOMI_DIR"  # Optionally clean up after build
+# Upload to Naomi
+NAOMI_IP="10.0.0.51"
+NAOMI_FILE="advancedpvrtest.bin"
 
-# Success message
-echo "libnaomi and toolchains have been successfully installed!"
+echo "Uploading file to Naomi at $NAOMI_IP..."
+if ! curl -T build/naomi.bin "http://$NAOMI_IP/$NAOMI_FILE"; then
+  echo "Failed to upload file to Naomi at $NAOMI_IP."
+  exit 1
+fi
 
-# Optional: Instructions to upload to Naomi using netboot (modify IP if needed)
-echo "To upload your build to Naomi, use the following command with netboot:"
-echo "netboot <NAOMI_IP> <path_to_your_binary>"
-
-# Done!
-echo "Installation complete!"
+echo "Installation and upload complete."
