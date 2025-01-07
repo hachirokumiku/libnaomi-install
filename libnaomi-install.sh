@@ -1,119 +1,58 @@
 #!/bin/bash
 
-# Function to check if the script is run with superuser privileges
-check_root() {
-    if [ "$(id -u)" -ne 0 ]; then
-        echo "This script must be run as root (or with sudo)."
-        exit 1
-    fi
-}
+# Set environment variables for paths
+NAOMI_DIR="/opt/toolchains/naomi"
+REPO_DIR="$PWD"  # Assuming you run the script from the root of the repository
 
-# Function to uninstall Libnaomi and toolchain
-uninstall_libnaomi() {
-    echo "Uninstalling Libnaomi and associated toolchain..."
+# Create and set up the /opt/toolchains/naomi directory
+echo "Setting up /opt/toolchains/naomi..."
+sudo mkdir -p $NAOMI_DIR
+sudo cp -r setup/* $NAOMI_DIR
+sudo chown -R $USER:$USER $NAOMI_DIR
+cd $NAOMI_DIR
 
-    # Remove toolchain binaries
-    rm -rf /usr/local/bin/sh4-linux-gnu-*
-    
-    # Remove any installed libraries
-    rm -rf /usr/local/lib/libnaomi*
+# Run the necessary build steps
+echo "Running ./download.sh to download toolchain sources..."
+./download.sh || { echo "Download failed"; exit 1; }
 
-    # Remove the source code directory if exists
-    rm -rf /opt/libnaomi
-    
-    # Optionally remove dependency packages installed
-    apt-get purge -y build-essential binutils gcc g++ cmake
+echo "Running ./unpack.sh to unpack toolchain..."
+./unpack.sh || { echo "Unpack failed"; exit 1; }
 
-    # Clean up residuals
-    apt-get autoremove -y
-    apt-get clean
-    echo "Libnaomi and toolchain uninstalled successfully."
-}
+echo "Running make to build toolchain..."
+make || { echo "Build failed"; exit 1; }
 
-# Function to install dependencies
-install_dependencies() {
-    echo "Installing dependencies..."
-    apt-get update
-    apt-get install -y \
-        build-essential \
-        binutils \
-        gcc \
-        g++ \
-        cmake \
-        git \
-        wget \
-        unzip \
-        python3 \
-        python3-pip
-    echo "Dependencies installed successfully."
-}
+echo "Running make gdb for SH-4..."
+make gdb || { echo "GDB build failed"; exit 1; }
 
-# Function to install the Libnaomi and toolchain
-install_libnaomi() {
-    echo "Installing Libnaomi and toolchain..."
+echo "Running ./cleanup.sh to clean up..."
+./cleanup.sh || { echo "Cleanup failed"; exit 1; }
 
-    # Clone the Libnaomi repository
-    git clone https://github.com/hachirokumiku/libnaomi.git /opt/libnaomi
-    cd /opt/libnaomi
+# Source the environment setup script
+echo "Setting up environment..."
+source $NAOMI_DIR/env.sh
 
-    # Compile Libnaomi
-    mkdir -p build
-    cd build
-    cmake ..
-    make
+# Set up the Python virtual environment
+echo "Setting up Python virtualenv..."
+python3 -m venv venv
+source venv/bin/activate
 
-    # Install the toolchain
-    wget https://github.com/yanagilab/sh4-linux-toolchain/releases/download/v1.0.0/sh4-linux-gnu.tar.gz
-    tar -xzvf sh4-linux-gnu.tar.gz -C /usr/local/
+# Install Python dependencies (if required)
+echo "Installing Python dependencies..."
+pip install -r requirements.txt || { echo "Python dependencies installation failed"; exit 1; }
 
-    # Verify installation
-    if [ -f "/usr/local/bin/sh4-linux-gnu-gcc" ]; then
-        echo "Libnaomi and toolchain installed successfully."
-    else
-        echo "Error installing Libnaomi or toolchain."
-        exit 1
-    fi
-}
+# Build libnaomi and the other system libraries
+echo "Building libnaomi and system libraries..."
+make || { echo "Make failed"; exit 1; }
 
-# Function to reinstall Libnaomi and dependencies
-reinstall_libnaomi_and_dependencies() {
-    echo "Reinstalling Libnaomi and dependencies..."
+# Install 3rd-party libraries if necessary
+echo "Installing 3rd-party libraries..."
+make -C 3rdparty install || { echo "3rd-party libraries installation failed"; exit 1; }
 
-    # Uninstall the current version if any
-    uninstall_libnaomi
+# Clean and rebuild with 3rd-party support
+echo "Cleaning and rebuilding with 3rd-party support..."
+make clean || { echo "Clean failed"; exit 1; }
+make || { echo "Rebuild failed"; exit 1; }
 
-    # Install dependencies
-    install_dependencies
-
-    # Install Libnaomi and toolchain
-    install_libnaomi
-}
-
-# Main function to handle options
-main() {
-    check_root
-
-    PS3="Choose an option: "
-    select option in "Uninstall Libnaomi and Toolchain" "Reinstall Libnaomi and Toolchain" "Reinstall Dependencies" "Exit"; do
-        case $option in
-            "Uninstall Libnaomi and Toolchain")
-                uninstall_libnaomi
-                ;;
-            "Reinstall Libnaomi and Toolchain")
-                reinstall_libnaomi_and_dependencies
-                ;;
-            "Reinstall Dependencies")
-                install_dependencies
-                ;;
-            "Exit")
-                break
-                ;;
-            *)
-                echo "Invalid option. Please try again."
-                ;;
-        esac
-    done
-}
-
-# Run the main function
-main
+# Success message
+echo "Setup complete! Naomi toolchain and dependencies are ready to use."
+echo "Don't forget to source /opt/toolchains/naomi/env.sh whenever you wish to use the toolchain."
