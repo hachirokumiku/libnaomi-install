@@ -1,141 +1,133 @@
-import os
-import subprocess
+#!/bin/bash
+
+# Ensure the script is run with superuser privileges
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Please run this script as root or with sudo."
+    exit 1
+fi
+
+# Update package list
+echo "Updating package list..."
+sudo apt-get update
+
+# Install necessary dependencies
+echo "Installing dependencies..."
+sudo apt-get install -y \
+  build-essential \
+  git \
+  cmake \
+  libcurl4-openssl-dev \
+  libssl-dev \
+  zlib1g-dev \
+  binutils-sh4-linux-gnu \
+  gcc-sh4-linux-gnu \
+  g++-sh4-linux-gnu \
+  make \
+  curl \
+  wget \
+  python3-tk \
+  python3-pip
+
+# Install additional Python packages (for Tkinter)
+pip3 install tk
+
+# Clone the libnaomi repository
+echo "Cloning libnaomi repository..."
+cd /opt
+sudo git clone https://github.com/hachirokumiku/libnaomi.git
+
+# Set up environment variables (if applicable)
+echo "Setting up environment variables..."
+echo 'export PATH=$PATH:/opt/libnaomi/bin' >> ~/.bashrc
+echo 'export LIBNAOMI_DIR=/opt/libnaomi' >> ~/.bashrc
+source ~/.bashrc
+
+# Build libnaomi (if required)
+echo "Building libnaomi..."
+cd /opt/libnaomi
+sudo make
+
+# Completion message
+echo "libnaomi and toolchain installation complete!"
+echo "You may need to log out and back in or restart your terminal for changes to take effect."
+
+# Start GUI-based ROM loader
+python3 << 'EOF'
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import shutil
-import sys
+import subprocess
+import os
 
-# Function to create and activate a virtual environment
-def create_venv():
-    venv_dir = 'libnaomi_venv'
-    if not os.path.exists(venv_dir):
+class LibNaomiGUI(tk.Tk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("LibNaomi ROM Loader")
+        self.geometry("500x300")
+
+        self.label = tk.Label(self, text="Select a ROM file to load", font=("Helvetica", 14))
+        self.label.pack(pady=20)
+
+        # Precompiled examples
+        self.example_button = tk.Button(self, text="Select Precompiled Example", command=self.select_example)
+        self.example_button.pack(pady=10)
+
+        # File selection for custom ROMs
+        self.file_button = tk.Button(self, text="Select Custom ROM", command=self.select_custom_rom)
+        self.file_button.pack(pady=10)
+
+        # Quit button
+        self.quit_button = tk.Button(self, text="Quit", command=self.quit)
+        self.quit_button.pack(pady=20)
+
+    def select_example(self):
+        # Load a list of precompiled example ROMs
+        examples_path = "/opt/libnaomi/examples"
+        if not os.path.exists(examples_path):
+            messagebox.showerror("Error", "Example ROMs not found.")
+            return
+        
+        examples = [f for f in os.listdir(examples_path) if f.endswith('.rom')]
+        if not examples:
+            messagebox.showerror("Error", "No precompiled example ROMs found.")
+            return
+
+        example = filedialog.askopenfilename(
+            initialdir=examples_path,
+            title="Select Example ROM",
+            filetypes=[("ROM files", "*.rom")]
+        )
+
+        if example:
+            self.load_rom(example)
+
+    def select_custom_rom(self):
+        # Let the user choose a custom ROM
+        file_path = filedialog.askopenfilename(
+            title="Select a ROM file",
+            filetypes=[("ROM files", "*.rom")]
+        )
+
+        if file_path:
+            self.load_rom(file_path)
+
+    def load_rom(self, rom_path):
+        # Simulate the ROM loading process
+        messagebox.showinfo("Loading ROM", f"Loading ROM: {rom_path}")
+        # Here you would add the logic for processing the ROM
+        # For example, calling a script or command to load and run the ROM
         try:
-            subprocess.check_call([sys.executable, '-m', 'venv', venv_dir])
+            subprocess.run(["/opt/libnaomi/load_rom.sh", rom_path], check=True)
+            messagebox.showinfo("Success", "ROM loaded successfully!")
         except subprocess.CalledProcessError as e:
-            messagebox.showerror("Error", f"Failed to create virtual environment: {e}")
-            return False
-    # Activate the virtual environment
-    activate_script = os.path.join(venv_dir, 'bin', 'activate_this.py')
-    try:
-        exec(open(activate_script).read(), {'__file__': activate_script})
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to activate virtual environment: {e}")
-        return False
-    return True
+            messagebox.showerror("Error", f"Error loading ROM: {str(e)}")
 
-# Install Python dependencies within the virtual environment
-def install_python_dependencies():
-    try:
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'tk'])
-    except subprocess.CalledProcessError as e:
-        messagebox.showerror("Error", f"Failed to install Python dependencies: {e}")
-        return False
-    return True
 
-# Install system dependencies
-def install_dependencies():
-    try:
-        subprocess.check_call(['sudo', 'apt', 'update'])
-        subprocess.check_call(['sudo', 'apt', 'install', '-y', 'git', 'build-essential', 'libusb-1.0-0-dev', 'libncurses5-dev'])
-    except subprocess.CalledProcessError as e:
-        messagebox.showerror("Error", f"Failed to install system dependencies: {e}")
-        return False
-    return True
-
-# Clone and compile Libnaomi
-def clone_and_compile_libnaomi():
-    try:
-        subprocess.check_call(['git', 'clone', 'https://github.com/dragonminded/libnaomi.git'])
-        os.chdir('libnaomi')
-        subprocess.check_call(['make'])
-        os.chdir('..')
-    except subprocess.CalledProcessError as e:
-        messagebox.showerror("Error", f"Failed to compile Libnaomi: {e}")
-        return False
-    return True
-
-# Clone and setup Netboot
-def setup_netboot():
-    try:
-        subprocess.check_call(['git', 'clone', 'https://github.com/dragonminded/netboot.git'])
-        os.chdir('netboot')
-    except subprocess.CalledProcessError as e:
-        messagebox.showerror("Error", f"Failed to clone Netboot: {e}")
-        return False
-    return True
-
-# Choose ROM file (example or .bin)
-def choose_rom_file():
-    file_path = filedialog.askopenfilename(title="Select ROM File", filetypes=(("ROM files", "*.bin"), ("All files", "*.*")))
-    return file_path
-
-# Copy ROM to boot directory
-def copy_rom(file_path):
-    try:
-        bootrom_dir = 'netboot/bootroms'
-        if not os.path.exists(bootrom_dir):
-            os.makedirs(bootrom_dir)
-        shutil.copy(file_path, bootrom_dir)
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to copy ROM: {e}")
-        return False
-    return True
-
-# Run Netboot
-def run_netboot():
-    try:
-        subprocess.check_call(['./netboot.sh'])
-    except subprocess.CalledProcessError as e:
-        messagebox.showerror("Error", f"Failed to run Netboot: {e}")
-        return False
-    return True
-
-# GUI for installation
-def install_gui():
-    root = tk.Tk()
-    root.title("Libnaomi & Netboot Setup")
-
-    # Install button
-    def install_action():
-        if create_venv():
-            messagebox.showinfo("Success", "Virtual environment created and activated successfully.")
-            if install_dependencies():
-                messagebox.showinfo("Success", "System dependencies installed successfully.")
-                if install_python_dependencies():
-                    messagebox.showinfo("Success", "Python dependencies installed successfully.")
-                    if clone_and_compile_libnaomi():
-                        messagebox.showinfo("Success", "Libnaomi compiled successfully.")
-                        if setup_netboot():
-                            messagebox.showinfo("Success", "Netboot set up successfully.")
-                            rom_file = choose_rom_file()
-                            if rom_file:
-                                if copy_rom(rom_file):
-                                    messagebox.showinfo("Success", "ROM copied successfully.")
-                                    if run_netboot():
-                                        messagebox.showinfo("Success", "Netboot running with selected ROM.")
-                                else:
-                                    messagebox.showerror("Error", "Failed to copy ROM.")
-                            else:
-                                messagebox.showerror("Error", "No ROM file selected.")
-                        else:
-                            messagebox.showerror("Error", "Failed to set up Netboot.")
-                    else:
-                        messagebox.showerror("Error", "Failed to compile Libnaomi.")
-                else:
-                    messagebox.showerror("Error", "Failed to install Python dependencies.")
-            else:
-                messagebox.showerror("Error", "Failed to install system dependencies.")
-        else:
-            messagebox.showerror("Error", "Failed to create or activate virtual environment.")
-    
-    install_button = tk.Button(root, text="Install Libnaomi & Netboot", command=install_action)
-    install_button.pack(pady=20)
-
-    # Exit button
-    exit_button = tk.Button(root, text="Exit", command=root.quit)
-    exit_button.pack(pady=10)
-
-    root.mainloop()
-
+# Run the GUI application
 if __name__ == "__main__":
-    install_gui()
+    app = LibNaomiGUI()
+    app.mainloop()
+
+EOF
+
+echo "GUI-based ROM loader started!"
