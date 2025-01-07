@@ -1,163 +1,105 @@
-#!/bin/bash
-
-# Update package list and install essential packages
-echo "Updating package list and installing essential tools..."
-sudo apt-get update
-sudo apt-get install -y \
-    build-essential \
-    curl \
-    git \
-    python3 \
-    python3-pip \
-    python3-setuptools \
-    python3-dev \
-    libffi-dev \
-    libssl-dev \
-    gcc \
-    g++ \
-    make \
-    wget \
-    unzip \
-    libncurses5-dev \
-    zlib1g-dev \
-    libreadline-dev \
-    libbz2-dev \
-    liblzma-dev \
-    libsqlite3-dev \
-    libyaml-dev \
-    libgdbm-dev \
-    libncursesw5-dev \
-    tk-dev \
-    libdb-dev \
-    libpcap-dev \
-    libusb-1.0-0-dev \
-    libboost-all-dev \
-    qt5-qmake \
-    qtbase5-dev \
-    libfreetype6-dev \
-    libpng-dev \
-    libjpeg-dev \
-    libtiff-dev \
-    libcurl4-openssl-dev \
-    python3-tk
-
-# Install Python3 pip
-echo "Installing pip for Python3..."
-curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-python3 get-pip.py
-rm get-pip.py
-
-# Install libnaomi dependencies (sh4 toolchain, etc.)
-echo "Installing libnaomi dependencies..."
-
-# Install toolchain for SH4
-sudo apt-get install -y \
-    gcc-sh4-linux-gnu \
-    binutils-sh4-linux-gnu \
-    g++-sh4-linux-gnu \
-    libc6-sh4-cross \
-    libncurses5-dev
-
-# Install libnaomi (from the official repository)
-echo "Cloning libnaomi repository..."
-git clone --recursive https://github.com/DragonMinded/libnaomi.git /opt/libnaomi
-
-# Install Python dependencies for libnaomi
-echo "Installing Python dependencies for libnaomi..."
-sudo pip3 install -r /opt/libnaomi/requirements.txt
-
-# Install DragonMinded's netboot tool
-echo "Installing netboot by DragonMinded..."
-git clone https://github.com/DragonMinded/netboot.git /opt/netboot
-cd /opt/netboot
-make
-cd ~
-
-# Compile libnaomi examples
-echo "Compiling libnaomi examples..."
-cd /opt/libnaomi
-make examples
-
-# Install Tkinter (for GUI functionality)
-echo "Installing Tkinter for GUI..."
-sudo apt-get install -y python3-tk
-
-# Create a GUI for uploading examples to Naomi
-echo "Setting up Python GUI for example selection and uploading..."
-cat << 'EOF' > /opt/libnaomi-upload-gui.py
-import tkinter as tk
-from tkinter import messagebox
 import os
 import subprocess
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import shutil
 
-class ExampleUploader(tk.Frame):
-    def __init__(self, root):
-        super().__init__(root)
-        self.root = root
-        self.root.title("LibNaomi Example Uploader")
-        
-        self.create_widgets()
-    
-    def create_widgets(self):
-        # List all available examples
-        self.examples = [f for f in os.listdir("/opt/libnaomi/examples") if os.path.isdir(f)]
-        
-        self.example_var = tk.StringVar(self.root)
-        self.example_var.set(self.examples[0])
-        
-        # Dropdown menu for selecting example
-        self.dropdown = tk.OptionMenu(self.root, self.example_var, *self.examples)
-        self.dropdown.pack(pady=10)
+# Installation function
+def install_dependencies():
+    try:
+        # Install system dependencies
+        subprocess.check_call(['sudo', 'apt', 'update'])
+        subprocess.check_call(['sudo', 'apt', 'install', '-y', 'git', 'build-essential', 'libusb-1.0-0-dev', 'libncurses5-dev'])
+        subprocess.check_call(['pip3', 'install', 'tk'])
+    except subprocess.CalledProcessError as e:
+        messagebox.showerror("Error", f"Failed to install dependencies: {e}")
+        return False
+    return True
 
-        # Upload button
-        self.upload_button = tk.Button(self.root, text="Upload to Naomi", command=self.upload_example)
-        self.upload_button.pack(pady=10)
+# Clone and compile Libnaomi
+def clone_and_compile_libnaomi():
+    try:
+        subprocess.check_call(['git', 'clone', 'https://github.com/dragonminded/libnaomi.git'])
+        os.chdir('libnaomi')
+        subprocess.check_call(['make'])
+        os.chdir('..')
+    except subprocess.CalledProcessError as e:
+        messagebox.showerror("Error", f"Failed to compile Libnaomi: {e}")
+        return False
+    return True
 
-    def upload_example(self):
-        selected_example = self.example_var.get()
-        # Construct the command to upload the example
-        command = f"./upload_to_naomi.sh {selected_example}"
-        try:
-            subprocess.run(command, shell=True, check=True)
-            messagebox.showinfo("Success", f"Example '{selected_example}' uploaded to Naomi.")
-        except subprocess.CalledProcessError:
-            messagebox.showerror("Error", f"Failed to upload '{selected_example}' to Naomi.")
+# Clone and setup Netboot
+def setup_netboot():
+    try:
+        subprocess.check_call(['git', 'clone', 'https://github.com/dragonminded/netboot.git'])
+        os.chdir('netboot')
+    except subprocess.CalledProcessError as e:
+        messagebox.showerror("Error", f"Failed to clone Netboot: {e}")
+        return False
+    return True
 
-def run_gui():
+# Choose ROM file (example or .bin)
+def choose_rom_file():
+    file_path = filedialog.askopenfilename(title="Select ROM File", filetypes=(("ROM files", "*.bin"), ("All files", "*.*")))
+    return file_path
+
+# Copy ROM to boot directory
+def copy_rom(file_path):
+    try:
+        bootrom_dir = 'netboot/bootroms'
+        if not os.path.exists(bootrom_dir):
+            os.makedirs(bootrom_dir)
+        shutil.copy(file_path, bootrom_dir)
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to copy ROM: {e}")
+        return False
+    return True
+
+# Run Netboot
+def run_netboot():
+    try:
+        subprocess.check_call(['./netboot.sh'])
+    except subprocess.CalledProcessError as e:
+        messagebox.showerror("Error", f"Failed to run Netboot: {e}")
+        return False
+    return True
+
+# GUI for installation
+def install_gui():
     root = tk.Tk()
-    app = ExampleUploader(root)
-    app.pack(padx=10, pady=10)
+    root.title("Libnaomi & Netboot Setup")
+
+    # Install button
+    def install_action():
+        if install_dependencies():
+            messagebox.showinfo("Success", "Dependencies installed successfully.")
+            if clone_and_compile_libnaomi():
+                messagebox.showinfo("Success", "Libnaomi compiled successfully.")
+                if setup_netboot():
+                    messagebox.showinfo("Success", "Netboot set up successfully.")
+                    rom_file = choose_rom_file()
+                    if rom_file:
+                        if copy_rom(rom_file):
+                            messagebox.showinfo("Success", "ROM copied successfully.")
+                            if run_netboot():
+                                messagebox.showinfo("Success", "Netboot running with selected ROM.")
+                        else:
+                            messagebox.showerror("Error", "Failed to copy ROM.")
+                else:
+                    messagebox.showerror("Error", "Failed to set up Netboot.")
+            else:
+                messagebox.showerror("Error", "Failed to compile Libnaomi.")
+        else:
+            messagebox.showerror("Error", "Failed to install dependencies.")
+    
+    install_button = tk.Button(root, text="Install Libnaomi & Netboot", command=install_action)
+    install_button.pack(pady=20)
+
+    # Exit button
+    exit_button = tk.Button(root, text="Exit", command=root.quit)
+    exit_button.pack(pady=10)
+
     root.mainloop()
 
 if __name__ == "__main__":
-    run_gui()
-EOF
-
-# Give execute permissions to the Python GUI
-chmod +x /opt/libnaomi-upload-gui.py
-
-# Create an upload script for example
-echo "Creating upload script..."
-cat << 'EOF' > /opt/upload_to_naomi.sh
-#!/bin/bash
-
-EXAMPLE=$1
-NAOMI_IP="10.0.0.51" # Modify this with the actual IP address of the Naomi device
-
-# Upload the example using netboot or other method
-if [ -z "$EXAMPLE" ]; then
-    echo "Please provide an example name."
-    exit 1
-fi
-
-echo "Uploading $EXAMPLE to Naomi at $NAOMI_IP..."
-# Assuming netboot is set up for this upload method
-ssh user@$NAOMI_IP "cd /opt/netboot; ./upload_example.sh $EXAMPLE"
-EOF
-
-# Make the upload script executable
-chmod +x /opt/upload_to_naomi.sh
-
-# Installation completed
-echo "LibNaomi and all dependencies are successfully installed."
-echo "You can run the example uploader GUI with the command: python3 /opt/libnaomi-upload-gui.py"
+    install_gui()
