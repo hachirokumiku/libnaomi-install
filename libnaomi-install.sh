@@ -3,16 +3,42 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import shutil
+import sys
 
-# Installation function
+# Function to create and activate a virtual environment
+def create_venv():
+    venv_dir = 'libnaomi_venv'
+    if not os.path.exists(venv_dir):
+        try:
+            subprocess.check_call([sys.executable, '-m', 'venv', venv_dir])
+        except subprocess.CalledProcessError as e:
+            messagebox.showerror("Error", f"Failed to create virtual environment: {e}")
+            return False
+    # Activate the virtual environment
+    activate_script = os.path.join(venv_dir, 'bin', 'activate_this.py')
+    try:
+        exec(open(activate_script).read(), {'__file__': activate_script})
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to activate virtual environment: {e}")
+        return False
+    return True
+
+# Install Python dependencies within the virtual environment
+def install_python_dependencies():
+    try:
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'tk'])
+    except subprocess.CalledProcessError as e:
+        messagebox.showerror("Error", f"Failed to install Python dependencies: {e}")
+        return False
+    return True
+
+# Install system dependencies
 def install_dependencies():
     try:
-        # Install system dependencies
         subprocess.check_call(['sudo', 'apt', 'update'])
         subprocess.check_call(['sudo', 'apt', 'install', '-y', 'git', 'build-essential', 'libusb-1.0-0-dev', 'libncurses5-dev'])
-        subprocess.check_call(['pip3', 'install', 'tk'])
     except subprocess.CalledProcessError as e:
-        messagebox.showerror("Error", f"Failed to install dependencies: {e}")
+        messagebox.showerror("Error", f"Failed to install system dependencies: {e}")
         return False
     return True
 
@@ -71,26 +97,36 @@ def install_gui():
 
     # Install button
     def install_action():
-        if install_dependencies():
-            messagebox.showinfo("Success", "Dependencies installed successfully.")
-            if clone_and_compile_libnaomi():
-                messagebox.showinfo("Success", "Libnaomi compiled successfully.")
-                if setup_netboot():
-                    messagebox.showinfo("Success", "Netboot set up successfully.")
-                    rom_file = choose_rom_file()
-                    if rom_file:
-                        if copy_rom(rom_file):
-                            messagebox.showinfo("Success", "ROM copied successfully.")
-                            if run_netboot():
-                                messagebox.showinfo("Success", "Netboot running with selected ROM.")
+        if create_venv():
+            messagebox.showinfo("Success", "Virtual environment created and activated successfully.")
+            if install_dependencies():
+                messagebox.showinfo("Success", "System dependencies installed successfully.")
+                if install_python_dependencies():
+                    messagebox.showinfo("Success", "Python dependencies installed successfully.")
+                    if clone_and_compile_libnaomi():
+                        messagebox.showinfo("Success", "Libnaomi compiled successfully.")
+                        if setup_netboot():
+                            messagebox.showinfo("Success", "Netboot set up successfully.")
+                            rom_file = choose_rom_file()
+                            if rom_file:
+                                if copy_rom(rom_file):
+                                    messagebox.showinfo("Success", "ROM copied successfully.")
+                                    if run_netboot():
+                                        messagebox.showinfo("Success", "Netboot running with selected ROM.")
+                                else:
+                                    messagebox.showerror("Error", "Failed to copy ROM.")
+                            else:
+                                messagebox.showerror("Error", "No ROM file selected.")
                         else:
-                            messagebox.showerror("Error", "Failed to copy ROM.")
+                            messagebox.showerror("Error", "Failed to set up Netboot.")
+                    else:
+                        messagebox.showerror("Error", "Failed to compile Libnaomi.")
                 else:
-                    messagebox.showerror("Error", "Failed to set up Netboot.")
+                    messagebox.showerror("Error", "Failed to install Python dependencies.")
             else:
-                messagebox.showerror("Error", "Failed to compile Libnaomi.")
+                messagebox.showerror("Error", "Failed to install system dependencies.")
         else:
-            messagebox.showerror("Error", "Failed to install dependencies.")
+            messagebox.showerror("Error", "Failed to create or activate virtual environment.")
     
     install_button = tk.Button(root, text="Install Libnaomi & Netboot", command=install_action)
     install_button.pack(pady=20)
