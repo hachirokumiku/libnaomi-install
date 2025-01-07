@@ -1,119 +1,76 @@
 #!/bin/bash
 
-# Update system packages and install common dependencies
-echo "Updating system and installing common dependencies..."
-sudo apt update -y && sudo apt upgrade -y
-sudo apt install -y \
+# Update package list and install required packages
+echo "Updating and installing required packages..."
+sudo apt-get update
+sudo apt-get install -y \
     build-essential \
-    python3 python3-pip python3-setuptools python3-dev \
-    git \
-    curl \
     cmake \
-    wget \
-    gcc \
+    python3-pip \
+    python3-tk \
     g++ \
+    gcc \
     make \
-    autoconf \
+    curl \
+    git \
+    binutils \
+    clang \
+    python3-venv \
+    python3-setuptools \
+    python3-dev \
+    libffi-dev \
+    libssl-dev \
+    libpng-dev \
+    zlib1g-dev \
     automake \
     libtool \
-    libssl-dev \
-    libreadline-dev \
     libncurses5-dev \
+    libncursesw5-dev \
+    libx11-dev \
+    libreadline-dev \
+    libxml2-dev \
+    libxslt1-dev \
     zlib1g-dev \
+    libpcap-dev \
+    pkg-config \
     flex \
     bison \
-    texinfo \
     gawk \
-    libncurses-dev \
-    libsdl2-dev \
-    pkg-config \
-    python3-venv \
-    libpython3-dev \
-    ssh \
-    libglib2.0-dev \
-    libfreetype6-dev \
-    clang \
-    lldb \
-    gdb \
-    libcurl4-openssl-dev \
-    liblzma-dev \
-    libzstd-dev \
-    ca-certificates \
-    libboost-all-dev
+    wget
 
-# Ensure Python 3 is set as default
-echo "Setting up Python 3 and pip3..."
-sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-sudo update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
-
-# Install pipenv if not installed
-if ! command -v pipenv &> /dev/null; then
-    echo "Installing pipenv..."
-    sudo pip install pipenv
-fi
-
-# Install additional Python dependencies for the toolchain
-echo "Installing additional Python dependencies..."
-pipenv install --dev
-
-# Install SH4 cross-compilation toolchain (SH4 toolchain)
-echo "Installing SH4 cross-compilation toolchain..."
-sudo apt install -y \
-    gcc-sh4-linux-gnu \
-    binutils-sh4-linux-gnu \
-    g++-sh4-linux-gnu
+# Install SH4 Toolchain (assuming Ubuntu or Debian-based distribution)
+echo "Installing SH4 Toolchain..."
+sudo apt-get install -y sh4-linux-gnu-binutils sh4-linux-gnu-gcc
 
 # Clone libnaomi repository
 echo "Cloning libnaomi repository..."
-git clone https://github.com/hachirokumiku/libnaomi.git /opt/libnaomi
+cd ~
+git clone https://github.com/hachirokumiku/libnaomi.git
+cd libnaomi
+git submodule update --init --recursive
 
-# Install dependencies from libnaomi
-echo "Installing dependencies from libnaomi..."
-cd /opt/libnaomi
-./install.sh
+# Install Python dependencies for libnaomi
+echo "Installing Python dependencies for libnaomi..."
+pip3 install -r requirements.txt
 
-# Install the Netboot environment (DragonMinded's netboot)
-echo "Setting up DragonMinded Netboot..."
-git clone https://github.com/DragonMinded/netboot.git /opt/netboot
-cd /opt/netboot
+# Clone DragonMinded NetBoot repository
+echo "Cloning DragonMinded NetBoot repository..."
+cd ~
+git clone https://github.com/DragonMinded/netboot.git
+cd netboot
+
+# Build NetBoot (assuming it's a simple Makefile-based build)
+echo "Building DragonMinded NetBoot..."
 make
 
-# Set up libnaomi examples
-echo "Setting up examples..."
-cd /opt/libnaomi/examples
-make all
+# Set up environment variables or configurations if required (e.g., IP address or network configurations for NetBoot)
+echo "Configuring NetBoot..."
+# You may need to add specific IP address settings or configuration details here
 
-# Ensure all dependencies for examples are compiled
-echo "Compiling libnaomi examples..."
-make
+# Compile examples for libnaomi (assuming examples exist in the repository)
+echo "Compiling examples for libnaomi..."
+cd ~/libnaomi
+make examples
 
-# Check if the example binaries were created successfully
-echo "Checking if examples were successfully built..."
-if [[ -f /opt/libnaomi/examples/advancedpvrtest/advancedpvrtest.elf ]]; then
-    echo "Examples compiled successfully!"
-else
-    echo "There was an issue compiling the examples!"
-    exit 1
-fi
-
-# Set up Python virtual environment
-echo "Setting up Python virtual environment..."
-cd /opt/libnaomi
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Final message
-echo "libnaomi, toolchains, dependencies, and examples are successfully installed and compiled!"
-
-# Prompt user for IP address for netboot (or use default if not provided)
-read -p "Enter the IP address for DragonMinded Netboot (default 10.0.0.51): " NETBOOT_IP
-NETBOOT_IP=${NETBOOT_IP:-10.0.0.51}
-
-echo "Uploading example to Naomi device at $NETBOOT_IP..."
-./upload_to_naomi.sh "$NETBOOT_IP"
-
-echo "All done! You should now be able to upload and run examples on your Naomi device via DragonMinded Netboot."
-
-# Exit
-exit 0
+# Display completion message
+echo "Installation of libnaomi, NetBoot, and all dependencies is complete!"
