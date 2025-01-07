@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Make sure the script is being run with sudo or as root
+# Check if running as root (for installing packages)
 if [[ $EUID -ne 0 ]]; then
-    echo "This script must be run as root" 
+    echo "This script must be run as root."
     exit 1
 fi
 
-# Update and install basic packages
-echo "Updating system and installing basic packages..."
+# Update package list and install dependencies
+echo "Updating package list and installing dependencies..."
 apt update
 apt install -y \
     build-essential \
@@ -30,7 +30,9 @@ apt install -y \
     libpng-dev \
     libjpeg-dev \
     libz-dev \
-    ftp
+    python3-tk \
+    netcat \
+    unzip
 
 # Install SH4 cross-compilation toolchain
 echo "Installing SH4 toolchain..."
@@ -41,90 +43,127 @@ apt install -y \
     libgcc1-sh4-cross \
     libstdc++6-sh4-cross
 
-# Check if toolchain is installed successfully
-if ! command -v sh4-linux-gnu-gcc &> /dev/null
-then
-    echo "SH4 toolchain installation failed. Please check your package manager settings."
-    exit 1
-fi
-
-echo "SH4 toolchain installed successfully!"
-
-# Install libnaomi dependencies
-echo "Installing libnaomi dependencies..."
-cd /opt/toolchains
+# Clone libnaomi repository
+echo "Cloning libnaomi repository..."
+cd /opt
 if [ ! -d "libnaomi" ]; then
-    echo "Cloning libnaomi repository..."
     git clone https://github.com/DragonMinded/libnaomi.git
 else
-    echo "libnaomi repository already exists, skipping clone."
+    echo "libnaomi already exists, skipping clone."
 fi
 
-# Install libnaomi from the repository
 cd libnaomi
 echo "Installing libnaomi..."
 ./install.sh
 
-# Build advancedpvrtest example
-echo "Building advancedpvrtest example..."
-cd examples/advancedpvrtest
-make
-
-# Check if the build was successful
-if [ -f "advancedpvrtest.bin" ]; then
-    echo "Build successful!"
-else
-    echo "Build failed!"
-    exit 1
-fi
-
-# FTP upload configuration
-NAOMI_IP="10.0.0.51"
-NAOMI_FTP_USER="your_ftp_username" # Replace with your FTP username
-NAOMI_FTP_PASS="your_ftp_password" # Replace with your FTP password
-NAOMI_UPLOAD_DIR="/home/root/netboot"  # Update with your desired upload directory on Naomi
-
-# Upload advancedpvrtest.bin to Naomi via FTP
-echo "Uploading advancedpvrtest.bin to Naomi..."
-ftp -n $NAOMI_IP <<END_SCRIPT
-quote USER $NAOMI_FTP_USER
-quote PASS $NAOMI_FTP_PASS
-binary
-cd $NAOMI_UPLOAD_DIR
-put advancedpvrtest.bin
-bye
-END_SCRIPT
-
-echo "Upload complete!"
-
-# Clone NetBoot from DragonMinded's repository
-echo "Cloning NetBoot repository..."
+# Clone netboot repository from DragonMinded
+echo "Cloning DragonMinded's Netboot repository..."
 cd /opt
-if [ ! -d "naomi-netboot" ]; then
-    git clone https://github.com/DragonMinded/naomi-netboot.git
+if [ ! -d "netboot" ]; then
+    git clone https://github.com/DragonMinded/netboot.git
 else
-    echo "Naomi-NetBoot repository already exists, skipping clone."
+    echo "Netboot already exists, skipping clone."
 fi
 
-# Install NetBoot dependencies
-cd naomi-netboot
-echo "Installing dependencies for NetBoot..."
+cd netboot
+echo "Compiling DragonMinded's Netboot..."
 make
 
-# Check if NetBoot setup was successful
-if [ -f "netboot.elf" ]; then
-    echo "NetBoot setup successful!"
-else
-    echo "NetBoot setup failed!"
-    exit 1
-fi
+# Set up Netboot on the Naomi
+echo "Setting up Netboot on the Naomi..."
+echo "Please ensure your Naomi is set up to accept netboot connections on port 5000."
 
-# Copy the compiled `advancedpvrtest.bin` to the NetBoot folder
-echo "Copying advancedpvrtest.bin to NetBoot directory..."
-cp /opt/toolchains/libnaomi/examples/advancedpvrtest/advancedpvrtest.bin /opt/naomi-netboot/
+# Start Netboot server for uploading examples
+echo "Starting Netboot server..."
+cd /opt/netboot
+nohup ./netbootd &
 
-# Final instructions for using NetBoot
-echo "NetBoot setup is complete."
-echo "You can now boot your Naomi system using NetBoot at IP address 10.0.0.51."
-echo "The advancedpvrtest.bin file is ready to be loaded via NetBoot."
+# Compile all examples
+echo "Compiling all examples..."
+cd /opt/libnaomi/examples
+for example in */; do
+    if [ -d "$example" ]; then
+        echo "Building example $example"
+        cd $example
+        make
+        cd ..
+    fi
+done
 
+# Check if the examples compiled successfully
+echo "Checking if examples were built..."
+for example in */; do
+    if [ -d "$example" ] && [ -f "$example/$(basename $example).bin" ]; then
+        echo "$example built successfully!"
+    else
+        echo "$example failed to build!"
+    fi
+done
+
+# GUI for selecting example to upload via Netboot
+echo "Launching GUI to select example..."
+
+python3 <<'EOF'
+import os
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+import subprocess
+
+# List all compiled example binaries
+examples_dir = '/opt/libnaomi/examples'
+example_list = [f for f in os.listdir(examples_dir) if os.path.isdir(os.path.join(examples_dir, f))]
+
+# Tkinter window setup
+root = tk.Tk()
+root.title("Naomi Example Uploader")
+
+# Label
+label = tk.Label(root, text="Select an example to upload to Naomi:")
+label.pack(pady=10)
+
+# Listbox for example selection
+example_listbox = tk.Listbox(root, height=10, width=50)
+for example in example_list:
+    example_listbox.insert(tk.END, example)
+example_listbox.pack(pady=10)
+
+# Entry for IP address input
+ip_label = tk.Label(root, text="Enter Naomi IP address:")
+ip_label.pack(pady=5)
+
+ip_entry = tk.Entry(root, width=50)
+ip_entry.pack(pady=5)
+
+# Function to handle upload via netboot
+def upload_example():
+    selected_example = example_listbox.get(tk.ACTIVE)
+    naomi_ip = ip_entry.get()
+
+    if not selected_example or not naomi_ip:
+        messagebox.showerror("Error", "Please select an example and enter an IP address.")
+        return
+
+    example_path = os.path.join(examples_dir, selected_example, f"{selected_example}.bin")
+    
+    if not os.path.exists(example_path):
+        messagebox.showerror("Error", "The selected example does not exist or failed to compile.")
+        return
+
+    # Netboot upload via DragonMinded's method
+    netboot_command = f"nc {naomi_ip} 5000 < {example_path}"
+    
+    try:
+        subprocess.run(netboot_command, shell=True, check=True)
+        messagebox.showinfo("Success", f"Successfully uploaded {selected_example} to Naomi at {naomi_ip} via Netboot!")
+    except subprocess.CalledProcessError:
+        messagebox.showerror("Error", "Failed to upload the example via Netboot. Please check the Naomi connection and the IP address.")
+
+# Upload button
+upload_button = tk.Button(root, text="Upload Example via Netboot", command=upload_example)
+upload_button.pack(pady=20)
+
+# Run the Tkinter event loop
+root.mainloop()
+EOF
+
+echo "Done! You can now select the example to upload using the GUI."
