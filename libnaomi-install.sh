@@ -1,76 +1,98 @@
-#!/bin/bash
+import tkinter as tk
+from tkinter import messagebox
+import subprocess
+import os
+import sys
 
-# Update package list and install required packages
-echo "Updating and installing required packages..."
-sudo apt-get update
-sudo apt-get install -y \
-    build-essential \
-    cmake \
-    python3-pip \
-    python3-tk \
-    g++ \
-    gcc \
-    make \
-    curl \
-    git \
-    binutils \
-    clang \
-    python3-venv \
-    python3-setuptools \
-    python3-dev \
-    libffi-dev \
-    libssl-dev \
-    libpng-dev \
-    zlib1g-dev \
-    automake \
-    libtool \
-    libncurses5-dev \
-    libncursesw5-dev \
-    libx11-dev \
-    libreadline-dev \
-    libxml2-dev \
-    libxslt1-dev \
-    zlib1g-dev \
-    libpcap-dev \
-    pkg-config \
-    flex \
-    bison \
-    gawk \
-    wget
+class InstallerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Libnaomi & NetBoot Installer")
+        self.root.geometry("400x300")
+        
+        # Create a label and buttons
+        self.label = tk.Label(root, text="Install Libnaomi, NetBoot, and Dependencies", font=("Arial", 14))
+        self.label.pack(pady=20)
 
-# Install SH4 Toolchain (assuming Ubuntu or Debian-based distribution)
-echo "Installing SH4 Toolchain..."
-sudo apt-get install -y sh4-linux-gnu-binutils sh4-linux-gnu-gcc
+        self.install_button = tk.Button(root, text="Start Installation", command=self.start_installation, width=20, height=2, bg="green")
+        self.install_button.pack(pady=20)
 
-# Clone libnaomi repository
-echo "Cloning libnaomi repository..."
-cd ~
-git clone https://github.com/hachirokumiku/libnaomi.git
-cd libnaomi
-git submodule update --init --recursive
+        self.status_label = tk.Label(root, text="Status: Waiting for action", font=("Arial", 10), fg="blue")
+        self.status_label.pack(pady=10)
 
-# Install Python dependencies for libnaomi
-echo "Installing Python dependencies for libnaomi..."
-pip3 install -r requirements.txt
+    def start_installation(self):
+        # Update status message
+        self.status_label.config(text="Status: Installation in progress...", fg="orange")
+        
+        # Ensure that Python and Tkinter are installed
+        if not self.check_python_and_tkinter():
+            self.status_label.config(text="Status: Missing Python/Tkinter", fg="red")
+            messagebox.showerror("Error", "Python 3 or Tkinter is missing. Installing now...")
+            self.install_python_and_tkinter()
 
-# Clone DragonMinded NetBoot repository
-echo "Cloning DragonMinded NetBoot repository..."
-cd ~
-git clone https://github.com/DragonMinded/netboot.git
-cd netboot
+        # Call the installation script
+        try:
+            result = self.run_install_script()
+            if result:
+                self.status_label.config(text="Status: Installation Complete!", fg="green")
+                messagebox.showinfo("Success", "Installation finished successfully!")
+            else:
+                self.status_label.config(text="Status: Installation Failed", fg="red")
+                messagebox.showerror("Error", "Installation failed. Check the console for details.")
+        except Exception as e:
+            self.status_label.config(text="Status: Error Occurred", fg="red")
+            messagebox.showerror("Error", f"Error during installation: {str(e)}")
 
-# Build NetBoot (assuming it's a simple Makefile-based build)
-echo "Building DragonMinded NetBoot..."
-make
+    def check_python_and_tkinter(self):
+        """ Check if Python 3 and Tkinter are installed """
+        try:
+            # Check if Python 3 is available
+            subprocess.run(["python3", "--version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Check if Tkinter is available
+            subprocess.run(["python3", "-m", "tkinter"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
-# Set up environment variables or configurations if required (e.g., IP address or network configurations for NetBoot)
-echo "Configuring NetBoot..."
-# You may need to add specific IP address settings or configuration details here
+    def install_python_and_tkinter(self):
+        """ Install Python 3 and Tkinter if they are not installed """
+        try:
+            subprocess.run(["sudo", "apt-get", "update"], check=True)
+            subprocess.run(["sudo", "apt-get", "install", "-y", "python3", "python3-tk"], check=True)
+        except subprocess.CalledProcessError as e:
+            messagebox.showerror("Error", f"Failed to install Python 3 or Tkinter: {str(e)}")
 
-# Compile examples for libnaomi (assuming examples exist in the repository)
-echo "Compiling examples for libnaomi..."
-cd ~/libnaomi
-make examples
+    def run_install_script(self):
+        # The installation script from GitHub
+        script_url = "https://raw.githubusercontent.com/hachirokumiku/libnaomi-install/refs/heads/main/libnaomi-install.sh"
+        
+        # Temporary script filename
+        script_file = "/tmp/install_all.sh"
 
-# Display completion message
-echo "Installation of libnaomi, NetBoot, and all dependencies is complete!"
+        # Download the script
+        try:
+            subprocess.run(["curl", "-SL", script_url, "-o", script_file], check=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Failed to download script: {e}")
+
+        # Make the script executable
+        os.chmod(script_file, 0o755)
+
+        # Run the script
+        try:
+            subprocess.run([script_file], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Installation failed: {e.stderr.decode()}")
+            return False
+
+
+if __name__ == "__main__":
+    # Create the main Tkinter window
+    root = tk.Tk()
+
+    # Instantiate the application class
+    app = InstallerApp(root)
+
+    # Start the Tkinter main loop
+    root.mainloop()
