@@ -23,7 +23,14 @@ apt install -y \
     python3-venv \
     unzip \
     wget \
-    sudo
+    sudo \
+    cmake \
+    libncurses-dev \
+    libfreetype6-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libz-dev \
+    ftp
 
 # Install SH4 cross-compilation toolchain
 echo "Installing SH4 toolchain..."
@@ -43,28 +50,19 @@ fi
 
 echo "SH4 toolchain installed successfully!"
 
-# Install additional dependencies for libnaomi
-echo "Installing dependencies for libnaomi..."
-apt install -y \
-    libncurses-dev \
-    libfreetype6-dev \
-    libpng-dev \
-    libjpeg-dev \
-    libz-dev
-
-# Install the toolchain if necessary
-echo "Installing toolchain if not already installed..."
+# Install libnaomi dependencies
+echo "Installing libnaomi dependencies..."
 cd /opt/toolchains
 if [ ! -d "libnaomi" ]; then
     echo "Cloning libnaomi repository..."
     git clone https://github.com/DragonMinded/libnaomi.git
+else
+    echo "libnaomi repository already exists, skipping clone."
 fi
 
-# Go into the repository directory
+# Install libnaomi from the repository
 cd libnaomi
-
-# Install libnaomi dependencies
-echo "Installing libnaomi dependencies..."
+echo "Installing libnaomi..."
 ./install.sh
 
 # Build advancedpvrtest example
@@ -80,17 +78,53 @@ else
     exit 1
 fi
 
-# Upload to Naomi (set your IP and path accordingly)
+# FTP upload configuration
 NAOMI_IP="10.0.0.51"
-NAOMI_PORT="21" # Example: Use port 21 for FTP, adjust if necessary
-FTP_USER="your_ftp_username"
-FTP_PASS="your_ftp_password"
-echo "Uploading to Naomi..."
+NAOMI_FTP_USER="your_ftp_username" # Replace with your FTP username
+NAOMI_FTP_PASS="your_ftp_password" # Replace with your FTP password
+NAOMI_UPLOAD_DIR="/home/root/netboot"  # Update with your desired upload directory on Naomi
 
-# Upload the compiled binary using FTP (or any other method)
-curl -T advancedpvrtest.bin ftp://$FTP_USER:$FTP_PASS@$NAOMI_IP:$NAOMI_PORT/
+# Upload advancedpvrtest.bin to Naomi via FTP
+echo "Uploading advancedpvrtest.bin to Naomi..."
+ftp -n $NAOMI_IP <<END_SCRIPT
+quote USER $NAOMI_FTP_USER
+quote PASS $NAOMI_FTP_PASS
+binary
+cd $NAOMI_UPLOAD_DIR
+put advancedpvrtest.bin
+bye
+END_SCRIPT
 
 echo "Upload complete!"
 
-# Finish message
-echo "All steps completed. Naomi development environment setup and upload finished!"
+# Clone NetBoot from DragonMinded's repository
+echo "Cloning NetBoot repository..."
+cd /opt
+if [ ! -d "naomi-netboot" ]; then
+    git clone https://github.com/DragonMinded/naomi-netboot.git
+else
+    echo "Naomi-NetBoot repository already exists, skipping clone."
+fi
+
+# Install NetBoot dependencies
+cd naomi-netboot
+echo "Installing dependencies for NetBoot..."
+make
+
+# Check if NetBoot setup was successful
+if [ -f "netboot.elf" ]; then
+    echo "NetBoot setup successful!"
+else
+    echo "NetBoot setup failed!"
+    exit 1
+fi
+
+# Copy the compiled `advancedpvrtest.bin` to the NetBoot folder
+echo "Copying advancedpvrtest.bin to NetBoot directory..."
+cp /opt/toolchains/libnaomi/examples/advancedpvrtest/advancedpvrtest.bin /opt/naomi-netboot/
+
+# Final instructions for using NetBoot
+echo "NetBoot setup is complete."
+echo "You can now boot your Naomi system using NetBoot at IP address 10.0.0.51."
+echo "The advancedpvrtest.bin file is ready to be loaded via NetBoot."
+
